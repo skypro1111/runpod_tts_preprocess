@@ -1,14 +1,13 @@
-# Використовуємо slim версію PyTorch
 FROM pytorch/pytorch:2.6.0-cuda12.4-cudnn9-runtime
 
-# Встановлюємо змінні середовища
+# Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     CUDA_VISIBLE_DEVICES=0 \
     DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1
 
-# Встановлюємо необхідні системні пакети для обробки аудіо
+# Install necessary system packages for audio processing
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libsndfile1 \
     ffmpeg \
@@ -17,32 +16,32 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsox-fmt-all \
     && rm -rf /var/lib/apt/lists/*
 
-# Створюємо користувача без прав root
+# Create a user without root privileges
 RUN useradd -m -u 1000 appuser
 
-# Створюємо робочу директорію та встановлюємо права
+# Create working directory and set permissions
 WORKDIR /app
 RUN chown appuser:appuser /app
 
-# Копіюємо файл з залежностями та встановлюємо їх
+# Copy the requirements file and install dependencies
 COPY --chown=appuser:appuser requirements_preprocess.txt .
 RUN pip3 install --no-cache-dir -r requirements_preprocess.txt && \
     pip3 install --no-cache-dir torchaudio==2.6.0 && \
     rm -rf ~/.cache/pip/*
 
-# Створюємо директорію для чекпоінтів
+# Create directory for checkpoints
 RUN mkdir -p /app/ckpts && chown -R appuser:appuser /app/ckpts
 
-# Копіюємо необхідні файли
+# Copy necessary files
 COPY --chown=appuser:appuser preprocess_handler.py .
 COPY --chown=appuser:appuser .env_prod .
 COPY --chown=appuser:appuser test_input.json .
 
-# Копіюємо чекпоінти
+# Copy checkpoints
 COPY --chown=appuser:appuser ckpts/ ./ckpts/
 
-# Перемикаємося на користувача без прав root
+# Switch to the non-root user
 USER appuser
 
-# Точка входу
+# Entry point
 CMD ["python3", "-u", "preprocess_handler.py"]

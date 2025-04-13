@@ -20,7 +20,7 @@ coverage.xml
 .venv
 .DS_Store
 
-# Не ігноруємо важливі файли
+# Do not ignore important files
 !ckpts/
 !.env_prod
 !test_input.json 

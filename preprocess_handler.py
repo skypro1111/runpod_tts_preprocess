@@ -14,26 +14,26 @@ from pypinyin import lazy_pinyin, Style
 from dotenv import load_dotenv, find_dotenv
 import runpod
 
-# Завантаження змінних середовища
+# Load environment variables
 load_dotenv(find_dotenv('.env_prod'))
 
-# Константи
+# Constants
 HOP_LENGTH = 256
 SAMPLE_RATE = 24000
 RANDOM_SEED = random.randint(0, 1000000)
 
-# Шляхи до моделей та файлів
+# Paths to models and files
 ONNX_MODEL_PATH = os.getenv("F5_Preprocess")
 VOCAB_FILE = os.getenv("vocab_file")
 
 if not ONNX_MODEL_PATH or not VOCAB_FILE:
     raise ValueError("F5_Preprocess or vocab_file not found in environment variables")
 
-# Завантаження словника
+# Load dictionary
 with open(VOCAB_FILE, "r", encoding="utf-8") as f:
     VOCAB_CHAR_MAP = {char[:-1]: i for i, char in enumerate(f)}
 
-# Налаштування ONNX сесії
+# Configure ONNX session
 SESSION_OPTS = onnxruntime.SessionOptions()
 SESSION_OPTS.log_severity_level = 3  # error level
 SESSION_OPTS.inter_op_num_threads = 0  # Run different nodes with num_threads. Set 0 for auto.
@@ -49,7 +49,7 @@ SESSION_OPTS.add_session_config_entry("arena_extend_strategy", "kSameAsRequested
 onnxruntime.set_seed(RANDOM_SEED)
 
 def convert_char_to_pinyin(text_list: Union[List[str], List[List[str]]], polyphone: bool = True) -> List[List[str]]:
-    """Конвертує текст в піньїнь"""
+    """Converts text to pinyin"""
     final_text_list = []
 
     def replace_quotes(text: str) -> str:
@@ -99,7 +99,7 @@ def list_str_to_idx(
     vocab_char_map: Dict[str, int],
     padding_value: int = -1
 ) -> torch.Tensor:
-    """Конвертує список строк в тензор індексів"""
+    """Converts a list of strings to an index tensor"""
     get_idx = vocab_char_map.get
     list_idx_tensors = [torch.tensor([get_idx(c, 0) for c in t], dtype=torch.int32) for t in text]
     text = torch.nn.utils.rnn.pad_sequence(list_idx_tensors, padding_value=padding_value, batch_first=True)
@@ -169,7 +169,7 @@ def process_reference_input(
 def preprocess_reference(
     reference_audio: bytes,
     ref_text: str
-) -> bytes:
+) -> dict:
     """
     Preprocesses reference audio and text, optimized for later combination with generation text
     
@@ -178,7 +178,7 @@ def preprocess_reference(
         ref_text: Reference text
         
     Returns:
-        bytes: Serialized preprocessed reference data
+        dict: JSON serializable preprocessed reference data
     """
     # Process reference input
     audio, ref_text_ids, ref_audio_len = process_reference_input(reference_audio, ref_text)
@@ -221,27 +221,26 @@ def preprocess_reference(
         emb = time_step[i] * emb_factor
         time_expand[:, i, :] = torch.cat((emb.sin(), emb.cos()), dim=-1)
     
-    # Package result
+    # Package result - convert all numpy arrays to lists for JSON serialization
     result = {
-        "preprocessed": (
-            outputs[0],  # noise
-            outputs[3],  # cat_mel_text (cond)
-            outputs[4],  # cat_mel_text_drop (cond_drop)
-            time_expand.numpy(),  # time_expand
-            outputs[1],  # rope_cos
-            outputs[2],  # rope_sin
-            delta_t.numpy(),  # delta_t
-            outputs[6]   # ref_signal_len
-        ),
+        "preprocessed": {
+            "noise": outputs[0].tolist(),
+            "cat_mel_text": outputs[3].tolist(),
+            "cat_mel_text_drop": outputs[4].tolist(),
+            "time_expand": time_expand.numpy().tolist(),
+            "rope_cos": outputs[1].tolist(),
+            "rope_sin": outputs[2].tolist(),
+            "delta_t": delta_t.numpy().tolist(),
+            "ref_signal_len": outputs[6].tolist() if isinstance(outputs[6], np.ndarray) else outputs[6]
+        },
         "ref_data": {
-            "audio": audio,
-            "text_ids": ref_text_ids,
-            "audio_len": ref_audio_len
+            "audio": audio.tolist(),
+            "text_ids": ref_text_ids.tolist(),
+            "audio_len": int(ref_audio_len)  # Convert to native Python int
         }
     }
     
-    # Serialize result
-    return pickle.dumps(result)
+    return result
 
 def handler(event):
     print(event)  
